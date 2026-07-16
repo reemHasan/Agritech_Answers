@@ -1,4 +1,0 @@
-,Region,Soil_Type,Crop,Rainfall_mm,Temperature_Celsius,Fertilizer_Used,Irrigation_Used,Weather_Condition,Days_to_Harvest,Yield_tons_per_hectare
-0,West,Sandy,Cotton,897.0772391101236,27.676966373377603,False,True,Cloudy,122,6.555816258223593
-1,South,Clay,Rice,992.6732816189208,18.02614225436302,True,True,Rainy,140,8.5273409063236
-2,North,Loam,Barley,147.9980252926104,29.79404241557257,False,False,Sunny,106,1.127443335982929
