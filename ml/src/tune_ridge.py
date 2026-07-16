@@ -26,32 +26,24 @@ import matplotlib.pyplot as plt
 import mlflow
 import mlflow.sklearn
 import mlflow.catboost
-
+from mlflow import MlflowClient
+from pathlib import Path
 from sklearn.model_selection import KFold, ParameterSampler
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler, FunctionTransformer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.linear_model import Ridge
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
-from scipy.stats import loguniform, randint, uniform
-
+from scipy.stats import loguniform
+import joblib
 
 # ---------------------------------------------------------------------------
-# Config (kept consistent with train_model_comparison.py)
+# Config
 # ---------------------------------------------------------------------------
-
-TRAIN_PATH = "train.csv"
-TARGET_COL = "Yield_tons_per_hectare"
-
-NUMERIC_FEATURES = ["Rainfall_mm", "Temperature_Celsius", "Days_to_Harvest"]
-BOOLEAN_FEATURES = ["Fertilizer_Used", "Irrigation_Used"]
-CATEGORICAL_FEATURES = ["Region", "Soil_Type", "Crop", "Weather_Condition"]
+from src.config import TRAIN_PATH, TARGET_COL, NUMERIC_FEATURES, BOOLEAN_FEATURES, CATEGORICAL_FEATURES, ENRICHED_FEATURES, SAMPLE_SIZE, N_SPLITS, RANDOM_STATE
 ALL_FEATURES = NUMERIC_FEATURES + BOOLEAN_FEATURES + CATEGORICAL_FEATURES
-
-N_SPLITS = 5
-RANDOM_STATE = 42
 N_ITER = 25  # number of random hyperparameter combinations tried per model
-
+client = MlflowClient(tracking_uri="http://127.0.0.1:5000")                  
 MLFLOW_EXPERIMENT_NAME = "crop_yield_hyperparameter_tuning"
 
 
@@ -95,6 +87,7 @@ def get_param_distributions() -> dict:
     return {
         "ridge": {
             "alpha": loguniform(1e-3, 1e2),
+            #"alpha" : [0.001, 0.01, 0.1, 1, 10, 100],
             "solver": ["auto", "svd", "cholesky", "lsqr"],
         },
     }
@@ -158,7 +151,7 @@ def run_random_search(X: pd.DataFrame, y: pd.Series) -> pd.DataFrame:
             mlflow.set_tag("tuning_group", "ridge")
             mlflow.set_tag("trial_index", trial_idx)
             mlflow.log_params(params)
-
+            # run cv with 5 fold and return mean of r2 and mae
             result = cv_score_trial(params, X, y)
             mlflow.log_metrics(result)
 
@@ -175,13 +168,13 @@ def run_random_search(X: pd.DataFrame, y: pd.Series) -> pd.DataFrame:
 # Summary run: sorted trial table + sensitivity plots, per model
 # ---------------------------------------------------------------------------
 
-def log_tuning_summary(model_name: str, trials_df: pd.DataFrame, param_names: list):
+def log_tuning_summary(model_name: str, trials_df: pd.DataFrame, param_names: list, artifact_path:str):
     trials_df_sorted = trials_df.sort_values("mean_val_r2", ascending=False).reset_index(drop=True)
 
-    csv_path = f"{model_name}_tuning_trials.csv"
+    csv_path = artifact_path/f"{model_name}_tuning_trials.csv"
     trials_df_sorted.to_csv(csv_path, index=False)
 
-    html_path = f"{model_name}_tuning_trials.html"
+    html_path = artifact_path/f"{model_name}_tuning_trials.html"
     trials_df_sorted.to_html(html_path, index=False)
 
     n_params = len(param_names)
@@ -203,7 +196,7 @@ def log_tuning_summary(model_name: str, trials_df: pd.DataFrame, param_names: li
 
     plt.suptitle(f"{model_name}: Hyperparameter Sensitivity ({N_ITER} random trials)")
     plt.tight_layout()
-    chart_path = f"{model_name}_tuning_sensitivity.png"
+    chart_path = artifact_path/f"{model_name}_tuning_sensitivity.png"
     plt.savefig(chart_path, dpi=150)
     plt.close()
 
@@ -226,11 +219,22 @@ def log_tuning_summary(model_name: str, trials_df: pd.DataFrame, param_names: li
 # Refit the overall best model on the full sample and log it as final
 # ---------------------------------------------------------------------------
 
-def log_final_model(best_params: dict, X: pd.DataFrame, y: pd.Series):
+def log_final_model(best_params: dict, best_r2:float, X: pd.DataFrame, y: pd.Series, artifact_path):
     preprocessor = build_preprocessor()
     model = build_model(best_params)
     pipeline = Pipeline(steps=[("preprocessor", preprocessor), ("model", model)])
     pipeline.fit(X, y)
+
+    # Bundle model with useful metadata
+    model_bundle = {
+        'model':          pipeline.named_steps["model"],
+        'r2_score': best_r2,
+        'params':     best_params,
+    }
+
+    # Save the model bundle to a file
+    joblib.dump(model_bundle, artifact_path/'tuned_ridge.pkl')
+    print("Model bundle saved successfully!")
 
     with mlflow.start_run(run_name="ridge_final_tuned"):
         mlflow.set_tag("tuning_group", "ridge")
@@ -246,6 +250,9 @@ def log_final_model(best_params: dict, X: pd.DataFrame, y: pd.Series):
 # ---------------------------------------------------------------------------
 
 def main():
+
+    BASE_DIR = Path(__file__).resolve().parent.parent
+    ml_aritfact_path = BASE_DIR/"ml_artifact"
     mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
 
     df = load_sample(TRAIN_PATH, sample_size=100_000)
@@ -257,13 +264,14 @@ def main():
     print(f"\n=== Tuning ridge ({N_ITER} random trials) ===")
     trials_df = run_random_search(X, y)
     best_params, best_r2 = log_tuning_summary(
-        "ridge", trials_df, list(param_distributions["ridge"].keys())
+        "ridge", trials_df, list(param_distributions["ridge"].keys()),
+        artifact_path=ml_aritfact_path
     )
     print(f"[ridge] best trial: R2={best_r2:.4f}, params={best_params}")
 
-    log_final_model(best_params, X, y)
+    log_final_model(best_params, best_r2, X, y, artifact_path=ml_aritfact_path)
 
-    with open("best_tuned_model.json", "w") as f:
+    with open(ml_aritfact_path/"best_tuned_model.json", "w") as f:
         json.dump({
             "model": "ridge",
             "params": {k: str(v) for k, v in best_params.items()},
