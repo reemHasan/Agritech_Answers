@@ -7,7 +7,7 @@
 
 from enum import Enum
 from typing import List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 
 class Region(str, Enum):
     north = "North"
@@ -50,8 +50,8 @@ class ParcelContext(BaseModel):
     Soil_Type: SoilType
     Rainfall_mm: float = Field(..., ge=100.00089622522204, le=999.998098221668, description="Annual rainfall in mm")
     Temperature_Celsius: float = Field(..., ge=15.000034141430271, le=39.99999662316004, description="Average temperature in Celsius")
-    Fertilizer_Used: bool
-    Irrigation_Used: bool
+    Fertilizer_Used: StrictBool
+    Irrigation_Used: StrictBool
     Weather_Condition: WeatherCondition
     Days_to_Harvest: int = Field(..., ge=60, le=149, description="Days from planting to harvest")
 

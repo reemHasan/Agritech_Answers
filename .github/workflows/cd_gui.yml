@@ -1,0 +1,42 @@
+name: CD — Deploy Dashboard to HuggingFace
+on:
+  push:
+    branches: [main]
+    paths:
+      - "monitoring_api/**"
+jobs:
+  deploy_dashboard:
+    name: Deploy Dashboard to HuggingFace Spaces
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install huggingface_hub
+        run: pip install huggingface_hub
+      - name: Push dashboard to HuggingFace Space
+        env:
+          HF_TOKEN:              ${{ secrets.HF_TOKEN }}
+          HF_DASHBOARD_SPACE_ID: ${{ secrets.HF_DASHBOARD_SPACE_ID }}
+        run: |
+          python - <<'EOF'
+          import os
+          from huggingface_hub import HfApi
+
+          api      = HfApi(token=os.environ["HF_TOKEN"])
+          space_id = os.environ["HF_DASHBOARD_SPACE_ID"]
+          sha      = os.environ.get("GITHUB_SHA", "unknown")[:7]
+
+          print(f"Deploying dashboard {sha} to: {space_id}")
+
+          api.upload_folder(
+              folder_path="monitoring_api",
+              repo_id=space_id,
+              repo_type="space",
+              ignore_patterns=["__pycache__/*", "*.pyc", ".env","analysis.py","artifacts/*"],
+              commit_message=f"Deploy dashboard {sha}",
+          )
+          print("Dashboard deploy complete.")
+          EOF

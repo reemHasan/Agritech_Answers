@@ -31,7 +31,6 @@ logger = logging.getLogger("crop_yield_api")
 # Config
 # ---------------------------------------------------------------------------
 
-MODEL_PATH = os.environ.get("MODEL_PATH", "model")
 #print(MODEL_PATH)
 ALL_CROPS = [c.value for c in Crop]
 
@@ -41,6 +40,7 @@ ALL_CROPS = [c.value for c in Crop]
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    MODEL_PATH = os.environ.get("MODEL_PATH", "model")
     if not os.path.isfile(MODEL_PATH):
         logger.error("model_not_found", extra={"model_path": MODEL_PATH})
         raise RuntimeError(

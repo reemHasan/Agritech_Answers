@@ -8,23 +8,18 @@ model artifact on disk. This makes the suite fast, fully deterministic, and
 safe to run in CI without any model-training step beforehand.
 
 Run with:
-    pytest test_main.py -v
+    pytest test_api.py -v
 """
 
 import os
-import tempfile
 
 import numpy as np
 import pandas as pd
 import pytest
-
-# --- Environment + model patch must happen BEFORE `import main` -----------
-# main.py reads MODEL_PATH from the environment at import time, and its
-# lifespan handler checks os.path.isdir(MODEL_PATH) before loading -- so a
-# real (even if empty) directory must exist at that path.
-_TMP_MODEL_DIR = tempfile.mkdtemp()
-os.environ["MODEL_PATH"] = _TMP_MODEL_DIR
-
+import joblib
+from fastapi.testclient import TestClient  # noqa: E402
+import app.api as main_module  # noqa: E402
+from app.api import app  # noqa: E402
 
 class FakeModel:
     """Deterministic stand-in for the real Ridge pipeline. Returns a fixed
@@ -53,21 +48,22 @@ class NegativeFakeModel:
         return np.array([-3.5])
 
 
-# Patch the loader function directly on the mlflow.sklearn module. main.py
-# calls `mlflow.sklearn.load_model(...)` (fully qualified) rather than
-# `from mlflow.sklearn import load_model`, so this attribute swap is picked
-# up correctly regardless of import order, and persists for the whole test
-# session without needing a context-managed mock around every test.
-import mlflow.sklearn as _mlflow_sklearn  # noqa: E402
-_mlflow_sklearn.load_model = lambda path: FakeModel()
+@pytest.fixture
+def fake_model_file(tmp_path, monkeypatch):
+    # create an empty file
+    model_path = tmp_path / "ridge.joblib"
+    model_path.touch()
 
-from fastapi.testclient import TestClient  # noqa: E402
-import main as main_module  # noqa: E402
-from main import app  # noqa: E402
+    # set env var
+    monkeypatch.setenv("MODEL_PATH", str(model_path))
 
+    # mock joblib.load()
+    monkeypatch.setattr(joblib, "load", lambda _: FakeModel())
 
-@pytest.fixture()
-def client():
+    return model_path
+
+@pytest.fixture
+def client(fake_model_file):
     with TestClient(app) as c:
         yield c
 
@@ -143,18 +139,21 @@ class TestPredictEndpoint:
 
     def test_wrong_type_for_boolean_field_rejected(self, client):
         payload = {**VALID_CONTEXT, "Crop": "Wheat", "Fertilizer_Used": "yes"}
+        print(payload)
         response = client.post("/predict", json=payload)
         assert response.status_code == 422
 
     def test_predicted_yield_never_negative(self, monkeypatch, client):
-        monkeypatch.setattr(main_module, "model", NegativeFakeModel())
+        #monkeypatch.setattr(main_module, "model", NegativeFakeModel())
+        monkeypatch.setattr(client.app.state, "model", NegativeFakeModel())
         payload = {**VALID_CONTEXT, "Crop": "Wheat"}
         response = client.post("/predict", json=payload)
         assert response.status_code == 200
         assert response.json()["predicted_yield_tons_per_hectare"] == 0.0
 
     def test_returns_503_when_model_not_loaded(self, monkeypatch, client):
-        monkeypatch.setattr(main_module, "model", None)
+        #monkeypatch.setattr(main_module, "model", None)
+        monkeypatch.setattr(client.app.state, "model", None)
         payload = {**VALID_CONTEXT, "Crop": "Wheat"}
         response = client.post("/predict", json=payload)
         assert response.status_code == 503
@@ -205,6 +204,7 @@ class TestRecommendEndpoint:
         assert response.status_code == 422
 
     def test_returns_503_when_model_not_loaded(self, monkeypatch, client):
-        monkeypatch.setattr(main_module, "model", None)
+        #monkeypatch.setattr(main_module, "model", None)
+        monkeypatch.setattr(client.app.state, "model", None)
         response = client.post("/recommend", json=VALID_CONTEXT)
         assert response.status_code == 503
