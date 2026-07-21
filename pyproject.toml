@@ -9,14 +9,11 @@ dependencies = [
     "cufflinks>=0.17.3",
     "evidently>=0.7.21",
     "huggingface-hub>=1.12.0",
-    "lightgbm>=4.6.0",
     "matplotlib>=3.10.8",
     "missingno>=0.5.2",
     "numba>=0.59.0",
     "numpy>=2.4.2",
     "pandas>=2.3.3",
-    "psycopg[binary]>=3.3.3",    # psycopg v3 — for async engine
-    "psycopg2-binary>=2.9.0",    # psycopg2   — for sync engine + alembic
     "pytest-cov>=7.1.0",
     "python-dotenv>=1.2.1",
     "scikit-learn>=1.8.0",
@@ -30,6 +27,7 @@ dependencies = [
     "streamlit-autorefresh>=1.0.1",
     "sympy>=1.14.0",
     "catboost>=1.2.10",
+    "pydantic>=2.13.4",
 ]
 
 [dependency-groups]
