@@ -9,194 +9,53 @@ Serves the trained Ridge model (registered in MLflow as
                     parcel context (crop not required as input)
 
 The model is loaded once at startup from a local artifact directory
-(exported from MLflow beforehand -- see README note at the bottom of this
-file / the Dockerfile), so the container has no runtime dependency on a
-live MLflow tracking server.
 """
+from app.models import Crop, RecommendRequest, RecommendResponse, ParcelContext, PredictRequest, PredictResponse, CropRecommendation
+from app.logger import configure_logging
 
-import json
 import logging
 import os
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from enum import Enum
-from typing import List
-
+import joblib
 import pandas as pd
-import mlflow.sklearn
 from fastapi import FastAPI, HTTPException, Request
-from pydantic import BaseModel, Field
-
-
-# ---------------------------------------------------------------------------
-# Structured (JSON) logging
-# ---------------------------------------------------------------------------
-# One JSON object per log line, written to stdout -- the standard contract
-# for containerized services, so a log aggregator (ELK, Loki, CloudWatch,
-# etc.) can parse and index fields directly instead of grepping free text.
-
-# Attribute names LogRecord already carries by default -- anything else on
-# the record came from an `extra={...}` kwarg passed to a logging call, and
-# gets folded into the JSON output as its own field (e.g. request_id,
-# duration_ms, crop).
-_RESERVED_LOG_ATTRS = set(vars(logging.LogRecord("", 0, "", 0, "", (), None))) | {"message", "asctime"}
-
-
-class JsonFormatter(logging.Formatter):
-    """Emit every log record as a single JSON line."""
-
-    def format(self, record: logging.LogRecord) -> str:
-        log_obj = {
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-        }
-        extras = {k: v for k, v in record.__dict__.items() if k not in _RESERVED_LOG_ATTRS}
-        log_obj.update(extras)
-        if record.exc_info:
-            log_obj["exception"] = self.formatException(record.exc_info)
-        return json.dumps(log_obj, default=str)
-
-
-def configure_logging():
-    handler = logging.StreamHandler()
-    handler.setFormatter(JsonFormatter())
-    root_logger = logging.getLogger()
-    root_logger.handlers = [handler]
-    root_logger.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
-
+from dotenv import load_dotenv
+load_dotenv()
 
 configure_logging()
 logger = logging.getLogger("crop_yield_api")
-
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
 MODEL_PATH = os.environ.get("MODEL_PATH", "model")
-
-# Fixed vocabularies, matching the categories the model was trained on
-# (dataset1). Using Enums here gives free request validation AND populates
-# FastAPI's auto-generated docs with the exact allowed values -- a bad
-# category value is rejected with a clear 422 error before it ever reaches
-# the model, instead of silently producing a meaningless prediction via
-# OneHotEncoder's handle_unknown="ignore".
-
-class Region(str, Enum):
-    north = "North"
-    south = "South"
-    east = "East"
-    west = "West"
-
-
-class SoilType(str, Enum):
-    sandy = "Sandy"
-    clay = "Clay"
-    loam = "Loam"
-    silt = "Silt"
-    peaty = "Peaty"
-    chalky = "Chalky"
-
-
-class WeatherCondition(str, Enum):
-    sunny = "Sunny"
-    rainy = "Rainy"
-    cloudy = "Cloudy"
-
-
-class Crop(str, Enum):
-    wheat = "Wheat"
-    rice = "Rice"
-    maize = "Maize"
-    barley = "Barley"
-    soybean = "Soybean"
-    cotton = "Cotton"
-
-
+#print(MODEL_PATH)
 ALL_CROPS = [c.value for c in Crop]
-
-
-# ---------------------------------------------------------------------------
-# Request / response schemas
-# ---------------------------------------------------------------------------
-
-class ParcelContext(BaseModel):
-    """Shared parcel conditions, used by both endpoints."""
-    Region: Region
-    Soil_Type: SoilType
-    Rainfall_mm: float = Field(..., ge=0, description="Annual rainfall in mm")
-    Temperature_Celsius: float = Field(..., description="Average temperature in Celsius")
-    Fertilizer_Used: bool
-    Irrigation_Used: bool
-    Weather_Condition: WeatherCondition
-    Days_to_Harvest: int = Field(..., gt=0, description="Days from planting to harvest")
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "Region": "West",
-                "Soil_Type": "Loam",
-                "Rainfall_mm": 850.0,
-                "Temperature_Celsius": 24.5,
-                "Fertilizer_Used": True,
-                "Irrigation_Used": True,
-                "Weather_Condition": "Sunny",
-                "Days_to_Harvest": 120,
-            }
-        }
-
-
-class PredictRequest(ParcelContext):
-    Crop: Crop
-
-
-class PredictResponse(BaseModel):
-    crop: str
-    predicted_yield_tons_per_hectare: float
-
-
-class RecommendRequest(ParcelContext):
-    pass
-
-
-class CropRecommendation(BaseModel):
-    crop: str
-    predicted_yield_tons_per_hectare: float
-    rank: int
-
-
-class RecommendResponse(BaseModel):
-    recommendations: List[CropRecommendation]
-
 
 # ---------------------------------------------------------------------------
 # Model loading
 # ---------------------------------------------------------------------------
 
-model = None  # populated at startup
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global model
-    if not os.path.isdir(MODEL_PATH):
-        logger.error("model_directory_not_found", extra={"model_path": MODEL_PATH})
+    if not os.path.isfile(MODEL_PATH):
+        logger.error("model_not_found", extra={"model_path": MODEL_PATH})
         raise RuntimeError(
-            f"Model directory '{MODEL_PATH}' not found. Export the registered "
-            f"MLflow model to this path before starting the API (see Dockerfile)."
+            f"Model file '{MODEL_PATH}' not found. Export the registered "
+            f"MLflow model to this path before starting the API"
         )
     start = time.perf_counter()
-    model = mlflow.sklearn.load_model(MODEL_PATH)
+    app.state.model = joblib.load(MODEL_PATH)
+    app.state.model_name = "Ridge"
     logger.info("model_loaded", extra={
         "model_path": MODEL_PATH,
         "load_duration_ms": round((time.perf_counter() - start) * 1000, 1),
     })
     yield
-    model = None
+    app.state.model = None
     logger.info("model_unloaded")
 
 
@@ -205,6 +64,7 @@ app = FastAPI(
     description="Predicts crop yield and recommends the most profitable crop "
                 "for a given parcel's growing conditions.",
     version="1.0.0",
+    license_info={"name": "MIT",},
     lifespan=lifespan,
 )
 
@@ -255,7 +115,7 @@ def context_to_row(context: ParcelContext, crop: str) -> pd.DataFrame:
 
 def predict_yield(context: ParcelContext, crop: str) -> float:
     row = context_to_row(context, crop)
-    prediction = model.predict(row)[0]
+    prediction = app.state.model.predict(row)[0]
     # Yield cannot be negative; the model is linear and could in principle
     # extrapolate below zero for extreme/unusual input combinations.
     return max(0.0, float(prediction))
@@ -267,13 +127,23 @@ def predict_yield(context: ParcelContext, crop: str) -> float:
 
 @app.get("/", tags=["health"])
 def health_check():
-    return {"status": "ok", "model_loaded": model is not None}
+    """Check if the API is running and if the model is loaded."""
+    try:                      
+        return {"status": "ok", "model_loaded": app.state.model is not None, "version": "1.0.0",
+                "model name": app.state.model_name,
+                "available_endpoints": {
+                "/predict": "Predicts yield for one specific crop under the given parcel conditions.",
+                "/recommend":"Simulates yield for every known crop under the given parcel conditions",
+                "/docs": "/docs",},
+                }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/predict", response_model=PredictResponse, tags=["prediction"])
 def predict(request: PredictRequest, http_request: Request):
     """Predicts yield for one specific crop under the given parcel conditions."""
-    if model is None:
+    if app.state.model is None:
         logger.error("predict_failed_model_not_loaded",
                       extra={"request_id": getattr(http_request.state, "request_id", None)})
         raise HTTPException(status_code=503, detail="Model not loaded")
@@ -297,7 +167,7 @@ def predict(request: PredictRequest, http_request: Request):
 def recommend(request: RecommendRequest, http_request: Request):
     """Simulates yield for every known crop under the given parcel conditions,
     and returns them ranked by predicted yield, descending."""
-    if model is None:
+    if app.state.model is None:
         logger.error("recommend_failed_model_not_loaded",
                       extra={"request_id": getattr(http_request.state, "request_id", None)})
         raise HTTPException(status_code=503, detail="Model not loaded")

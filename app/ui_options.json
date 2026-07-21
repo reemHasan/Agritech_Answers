@@ -1,0 +1,54 @@
+{
+  "categorical": {
+    "Region": [
+      "East",
+      "North",
+      "South",
+      "West"
+    ],
+    "Soil_Type": [
+      "Chalky",
+      "Clay",
+      "Loam",
+      "Peaty",
+      "Sandy",
+      "Silt"
+    ],
+    "Crop": [
+      "Barley",
+      "Cotton",
+      "Maize",
+      "Rice",
+      "Soybean",
+      "Wheat"
+    ],
+    "Weather_Condition": [
+      "Cloudy",
+      "Rainy",
+      "Sunny"
+    ]
+  },
+  "numeric": {
+    "Rainfall_mm": {
+      "api_min": 100.00089622522204,
+      "api_max": 999.998098221668,
+      "ui_slider_min": 109.1,
+      "ui_slider_max": 990.9,
+      "ui_slider_default": 550.1
+    },
+    "Temperature_Celsius": {
+      "api_min": 15.000034141430271,
+      "api_max": 39.99999662316004,
+      "ui_slider_min": 15.3,
+      "ui_slider_max": 39.8,
+      "ui_slider_default": 27.5
+    },
+    "Days_to_Harvest": {
+      "api_min": 60,
+      "api_max": 149,
+      "ui_slider_min": 60,
+      "ui_slider_max": 149,
+      "ui_slider_default": 104
+    }
+  }
+}
