@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: crop-yield-api
+    runtime: docker
+    dockerfilePath: ./app/backend/Dockerfile
+    dockerContext: ./app/backend
+    plan: free
+    healthCheckPath: /
+    autoDeploy: false  # deploys are triggered explicitly by cd_api.yml after tests pass
+    envVars:
+      - key: MODEL_PATH
+        value: /app/model/ridge_pipeline.joblib
+      - key: LOG_LEVEL
+        value: INFO
+
+  - type: web
+    name: crop-yield-ui
+    runtime: docker
+    dockerfilePath: ./app/frontend/Dockerfile
+    dockerContext: ./app/frontend
+    plan: free
+    healthCheckPath: /_stcore/health
+    autoDeploy: false  # deploys are triggered explicitly by cd_ui.yml
+    envVars:
+      # Auto-linked to the API service's own deployed hostname -- no need
+      # to manually copy/paste the API's URL after each deploy. Render
+      # resolves this at deploy time; app.py prefixes "https://" itself
+      # since this property returns a bare host, not a full URL.
+      - key: API_URL
+        fromService:
+          name: crop-yield-api
+          type: web
+          property: host

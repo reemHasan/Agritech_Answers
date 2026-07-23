@@ -27,6 +27,14 @@ try:
 except (FileNotFoundError, KeyError):
     API_URL = os.environ.get("API_URL", "http://localhost:8000")
 
+# render.yaml links API_URL via fromService's "host" property, which
+# returns a bare hostname (e.g. "crop-yield-api.onrender.com"), not a full
+# URL -- add the scheme if it's missing, so this works whether API_URL
+# came from Render's auto-linking, a manually-set env var with a full URL,
+# or the localhost default above.
+if API_URL and not API_URL.startswith(("http://", "https://")):
+    API_URL = f"https://{API_URL}"
+
 REQUEST_TIMEOUT_SECONDS = 15
 
 # Fallback UI options, matching main.py's Enums exactly. If

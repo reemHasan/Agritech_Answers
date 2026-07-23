@@ -20,7 +20,6 @@ agritech_answers/
 │   │   ├── model/
 │   │   │   └── ridge_pipeline.joblib   # Trained pipeline artifact (see ml/src/train_final_model.py)
 │   │   ├── Dockerfile
-│   │   ├── render.yaml
 │   │   ├── pyproject.toml           # Lean runtime deps only (no mlflow, no jupyter)
 │   │   └── uv.lock
 │   │
@@ -58,6 +57,7 @@ agritech_answers/
 │   ├── cd_api.yml                # Deploys backend to Render, gated on ci_api.yml succeeding
 │   └── cd_ui.yml                 # Deploys frontend to Render on push touching app/frontend/**
 │
+├── render.yaml                   # Render Blueprint: both services, API_URL auto-linked via fromService
 ├── pyproject.toml                # Root: full research/dev environment (notebooks, MLOps tooling)
 ├── uv.lock
 └── README.md
@@ -90,18 +90,32 @@ uv run pytest api/test_main.py -v
 
 ## Deployment (Render)
 
-Two independent Render Web Services, each built from its own Dockerfile:
+Two Render Web Services, both defined in a single root-level `render.yaml`
+Blueprint, each built from its own Dockerfile:
 
 | Service | Dockerfile | Context | Deploy trigger |
 |---|---|---|---|
 | `crop-yield-api` | `app/backend/Dockerfile` | `app/backend` | `cd_api.yml`, after `ci_api.yml` tests pass |
 | `crop-yield-ui` | `app/frontend/Dockerfile` | `app/frontend` | `cd_ui.yml`, on push to `app/frontend/**` |
 
-Both services have Render's own "Auto-Deploy" setting turned **off**
-(`autoDeploy: false` in `render.yaml`) — deploys only happen via the CI/CD
-workflows' deploy hooks, not on every raw push, so the API's deploy stays
-gated on tests passing.
+`crop-yield-ui`'s `API_URL` env var is auto-linked to `crop-yield-api`'s
+deployed hostname via `fromService` — no manual URL copy-paste needed
+after redeploys.
 
+Both services have Render's own "Auto-Deploy" setting turned **off**
+(`autoDeploy: false`) — deploys only happen via the CI/CD workflows' deploy
+hooks, not on every raw push, so the API's deploy stays gated on tests
+passing.
+
+<!--**Adopting the Blueprint** (if migrating from manually-created services,
+as this project initially was): `render.yaml` is only read by Render's
+**New → Blueprint** flow, not **New → Web Service** — a service created
+manually never looks at this file at all. To adopt it: delete the manually
+created services in the Render dashboard, then **New → Blueprint**,
+connect the repo (root `render.yaml` is auto-detected, no custom path
+needed), and deploy. Re-add the two deploy hook secrets afterward, since
+they're per-service and change when services are recreated.
+-->
 **Required GitHub repo secrets:**
 - `RENDER_API_DEPLOY_HOOK_URL`
 - `RENDER_UI_DEPLOY_HOOK_URL`
@@ -114,4 +128,3 @@ gated on tests passing.
 `ml/src/train_final_model.py`, then exported with `joblib.dump(pipeline,
 "ridge_pipeline.joblib")` and copied into `app/backend/model/` before
 building the backend Docker image.
-<!-- pytest --cov=app/ --cov-report html -->
