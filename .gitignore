@@ -149,7 +149,8 @@ tempCodeRunnerFile.py
 .pypirc
 
 # Streamlit
-.streamlit/
+#!.streamlit/config.toml
+app/frontend/.streamlit/secrets.toml
 # ignore profiling output files
 profiling_cprofile/
 profiling_output/
