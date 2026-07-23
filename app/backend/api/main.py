@@ -1,38 +1,36 @@
 """
 Crop Yield Prediction & Recommendation API
 =============================================
-Serves the trained Ridge model (registered in MLflow as
-'crop_yield_ridge_model') via two endpoints:
+Serves the trained Ridge model via two endpoints:
 
   POST /predict   - yield prediction for a single chosen crop + parcel context
   POST /recommend - ranks all known crops by predicted yield, for a given
                     parcel context (crop not required as input)
 
 The model is loaded once at startup from a local artifact directory
+See pydantic_models.py for request/response schemas, logger.py for
+structured logging setup, and helpers.py for model loading and prediction
+logic.
 """
-from app.models import Crop, RecommendRequest, RecommendResponse, ParcelContext, PredictRequest, PredictResponse, CropRecommendation
-from app.logger import configure_logging
-
-import logging
+from api.logger import logger
+from api.helpers import  predict_yield, load_model
+from api.pydantic_models import (
+    ALL_CROPS,
+    PredictRequest,
+    PredictResponse,
+    RecommendRequest,
+    RecommendResponse,
+    CropRecommendation,
+)
 import os
 import time
 import uuid
 from contextlib import asynccontextmanager
-import joblib
-import pandas as pd
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 load_dotenv()
 
-configure_logging()
-logger = logging.getLogger("crop_yield_api")
-
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-
-#print(MODEL_PATH)
-ALL_CROPS = [c.value for c in Crop]
 
 # ---------------------------------------------------------------------------
 # Model loading
@@ -41,14 +39,10 @@ ALL_CROPS = [c.value for c in Crop]
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     MODEL_PATH = os.environ.get("MODEL_PATH", "model")
-    if not os.path.isfile(MODEL_PATH):
-        logger.error("model_not_found", extra={"model_path": MODEL_PATH})
-        raise RuntimeError(
-            f"Model file '{MODEL_PATH}' not found. Export the registered "
-            f"MLflow model to this path before starting the API"
-        )
+    print("MODEL_PATH",MODEL_PATH)
     start = time.perf_counter()
-    app.state.model = joblib.load(MODEL_PATH)
+    app.state.model = load_model(MODEL_PATH)
+    #app.state.model = joblib.load(MODEL_PATH)
     app.state.model_name = "Ridge"
     logger.info("model_loaded", extra={
         "model_path": MODEL_PATH,
@@ -67,7 +61,23 @@ app = FastAPI(
     license_info={"name": "MIT",},
     lifespan=lifespan,
 )
+# ---------------------------------------------------------------------------
+# Middleware
+# ---------------------------------------------------------------------------
 
+# allow_credentials=False is required here: browsers reject credentialed
+# requests (cookies/auth headers) to a wildcard "*" origin per the CORS
+# spec, so allow_origins=["*"] + allow_credentials=True is a combination
+# that silently doesn't work as intended. This API doesn't use cookies or
+# browser-stored auth, so disabling credentials is the correct fix rather
+# than restricting origins.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.middleware("http")
 async def add_request_id_and_log(request: Request, call_next):
@@ -92,50 +102,25 @@ async def add_request_id_and_log(request: Request, call_next):
     })
     return response
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def context_to_row(context: ParcelContext, crop: str) -> pd.DataFrame:
-    """Builds a single-row DataFrame matching the exact column names and
-    order the model's preprocessing pipeline was fitted on."""
-    return pd.DataFrame([{
-        "Rainfall_mm": context.Rainfall_mm,
-        "Temperature_Celsius": context.Temperature_Celsius,
-        "Days_to_Harvest": context.Days_to_Harvest,
-        "Fertilizer_Used": context.Fertilizer_Used,
-        "Irrigation_Used": context.Irrigation_Used,
-        "Region": context.Region.value,
-        "Soil_Type": context.Soil_Type.value,
-        "Crop": crop,
-        "Weather_Condition": context.Weather_Condition.value,
-    }])
-
-
-def predict_yield(context: ParcelContext, crop: str) -> float:
-    row = context_to_row(context, crop)
-    prediction = app.state.model.predict(row)[0]
-    # Yield cannot be negative; the model is linear and could in principle
-    # extrapolate below zero for extreme/unusual input combinations.
-    return max(0.0, float(prediction))
-
-
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
 @app.get("/", tags=["health"])
-def health_check():
+def health_check(response: Response):
     """Check if the API is running and if the model is loaded."""
-    try:                      
-        return {"status": "ok", "model_loaded": app.state.model is not None, "version": "1.0.0",
+    try:
+        if  app.state.model is not None:
+            return {"status": "ok", "model_loaded": True, "version": "1.0.0",
                 "model name": app.state.model_name,
                 "available_endpoints": {
                 "/predict": "Predicts yield for one specific crop under the given parcel conditions.",
                 "/recommend":"Simulates yield for every known crop under the given parcel conditions",
                 "/docs": "/docs",},
                 }
+        else:
+            response.status_code = 503
+            return {"status": "unavailable", "model_loaded": False}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -148,7 +133,7 @@ def predict(request: PredictRequest, http_request: Request):
                       extra={"request_id": getattr(http_request.state, "request_id", None)})
         raise HTTPException(status_code=503, detail="Model not loaded")
 
-    predicted_yield = predict_yield(request, request.Crop.value)
+    predicted_yield = predict_yield(model=app.state.model, context=request, crop=request.Crop.value)
 
     logger.info("predict", extra={
         "request_id": getattr(http_request.state, "request_id", None),
@@ -174,7 +159,7 @@ def recommend(request: RecommendRequest, http_request: Request):
 
     results = []
     for crop in ALL_CROPS:
-        predicted_yield = predict_yield(request, crop)
+        predicted_yield = predict_yield(model=app.state.model, context=request, crop=crop)
         results.append({"crop": crop, "predicted_yield_tons_per_hectare": predicted_yield})
 
     results.sort(key=lambda r: r["predicted_yield_tons_per_hectare"], reverse=True)

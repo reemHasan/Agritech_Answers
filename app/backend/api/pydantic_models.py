@@ -39,6 +39,7 @@ class Crop(str, Enum):
     soybean = "Soybean"
     cotton = "Cotton"
 
+ALL_CROPS = [c.value for c in Crop]
 # ---------------------------------------------------------------------------
 # Request / response schemas
 # ---------------------------------------------------------------------------

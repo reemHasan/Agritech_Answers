@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: crop-yield-api
+    runtime: docker
+    dockerfilePath: ./app/backend/Dockerfile
+    dockerContext: ./app/backend
+    plan: free
+    healthCheckPath: /
+    autoDeploy: false  # deploys are triggered explicitly by CI after tests pass
+    envVars:
+      - key: MODEL_PATH
+        value: /app/model/ridge_pipeline.joblib
+      - key: LOG_LEVEL
+        value: INFO

@@ -1,0 +1,73 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pycache
+.Python
+
+# ── Virtual environments ───────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ── uv cache ──────────────────────────────────────────────────────────────────
+.uv/
+uv-cache/
+
+# ── Tests (not needed in production image) ────────────────────────────────────
+tests/
+test/
+*.test.py
+test_*.py
+pytest.ini
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# ── Logs (generated at runtime, not baked into image) ─────────────────────────
+logs/
+*.log
+
+# ── Git ───────────────────────────────────────────────────────────────────────
+#.git/
+#.gitignore
+#.gitattributes
+
+# ── IDE / editor ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── Docker files themselves (no need to copy into image) ──────────────────────
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# ── Environment files (secrets must come from env vars, not files) ─────────────
+.env
+.env.*
+*.env
+
+# ── Documentation ─────────────────────────────────────────────────────────────
+docs/
+*.md
+LICENSE
+
+# ── Temporary / build artefacts ───────────────────────────────────────────────
+*.tmp
+*.bak
+dist/
+build/
+*.egg-info/
+
+# Ruff stuff:
+.ruff_cache/
+
+# PyPI configuration file
+.pypirc

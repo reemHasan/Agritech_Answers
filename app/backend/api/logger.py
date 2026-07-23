@@ -40,3 +40,6 @@ def configure_logging():
     root_logger = logging.getLogger()
     root_logger.handlers = [handler]
     root_logger.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
+
+configure_logging()
+logger = logging.getLogger("crop_yield_api")

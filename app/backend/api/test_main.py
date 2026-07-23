@@ -17,9 +17,9 @@ import numpy as np
 import pandas as pd
 import pytest
 import joblib
-from fastapi.testclient import TestClient  # noqa: E402
-import app.api as main_module  # noqa: E402
-from app.api import app  # noqa: E402
+#from fastapi.testclient import TestClient  # noqa: E402
+import api.main as main_module  # noqa: E402
+#from api.main import app  # noqa: E402
 
 class FakeModel:
     """Deterministic stand-in for the real Ridge pipeline. Returns a fixed
@@ -48,7 +48,7 @@ class NegativeFakeModel:
         return np.array([-3.5])
 
 
-@pytest.fixture
+"""@pytest.fixture
 def fake_model_file(tmp_path, monkeypatch):
     # create an empty file
     model_path = tmp_path / "ridge.joblib"
@@ -60,10 +60,20 @@ def fake_model_file(tmp_path, monkeypatch):
     # mock joblib.load()
     monkeypatch.setattr(joblib, "load", lambda _: FakeModel())
 
-    return model_path
+    return model_path"""
+
+# Patch load_model as it exists in main's own namespace (main.py does
+# `from helpers import load_model`, which binds a local reference in
+# main's module dict -- patching helpers.load_model after that point
+# would NOT affect main's already-bound name, so main_module.load_model
+# is the correct target here).
+main_module.load_model = lambda path: FakeModel()
+ 
+from fastapi.testclient import TestClient  # noqa: E402
+from api.main import app  # noqa: E402
 
 @pytest.fixture
-def client(fake_model_file):
+def client():
     with TestClient(app) as c:
         yield c
 
@@ -91,9 +101,31 @@ def test_health_check(client):
     assert body["status"] == "ok"
     assert body["model_loaded"] is True
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 1. API HEALTH 
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestAPIHealth:
+ 
+    def test_status_code_200(self, client):
+        assert client.get("/").status_code == 200
+ 
+    def test_model_loaded_true(self, client):
+        assert client.get("/").json()["model_loaded"] is True
+ 
+    def test_status_ok(self, client):
+        assert client.get("/").json()["status"] == "ok"
+ 
+    def test_model_loaded_false_when_none(self, monkeypatch, client):
+        monkeypatch.setattr(client.app.state, "model", None)
+        response = client.get("/")
+        data = response.json()
+        assert data["model_loaded"] is False
+        assert data["status"] == "unavailable"
+        assert response.status_code == 503
 
 # ---------------------------------------------------------------------------
-# /predict
+# 2. /predict endpoint
 # ---------------------------------------------------------------------------
 
 class TestPredictEndpoint:
@@ -160,7 +192,7 @@ class TestPredictEndpoint:
 
 
 # ---------------------------------------------------------------------------
-# /recommend
+#  3. /recommend endpoint
 # ---------------------------------------------------------------------------
 
 class TestRecommendEndpoint:
@@ -208,3 +240,12 @@ class TestRecommendEndpoint:
         monkeypatch.setattr(client.app.state, "model", None)
         response = client.post("/recommend", json=VALID_CONTEXT)
         assert response.status_code == 503
+
+# ---------------------------------------------------------------------------
+# Request ID / CORS middleware
+# ---------------------------------------------------------------------------
+ 
+def test_response_includes_request_id_header(client):
+    response = client.get("/")
+    assert "X-Request-ID" in response.headers
+ 
