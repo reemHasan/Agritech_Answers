@@ -12,6 +12,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
+COPY ui_options .
 COPY .streamlit/ ./.streamlit/
 
 # ui_options.json (from ml/src/compute_field_bounds.py) is optional --

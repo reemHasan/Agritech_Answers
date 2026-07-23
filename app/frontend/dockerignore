@@ -78,8 +78,6 @@ build/
 # PyPI configuration file
 .pypirc
 
-# Streamlit
-.streamlit/
 
 # ignore profiling output files
 profiling_cprofile/
