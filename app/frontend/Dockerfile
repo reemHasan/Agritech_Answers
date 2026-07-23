@@ -14,11 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py .
 COPY ui_options.json .
 COPY .streamlit/ ./.streamlit/
-
-# ui_options.json (from ml/src/compute_field_bounds.py) is optional --
-# app.py falls back to hardcoded defaults if it isn't present. Copy it in
-# if you've generated it and want real data-derived slider bounds/dropdowns:
-# COPY ui_options.json .
+COPY assets/ ./assets/
 
 RUN chown -R appuser:appuser /app
 USER appuser

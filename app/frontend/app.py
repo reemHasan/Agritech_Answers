@@ -14,7 +14,15 @@ import requests
 import streamlit as st
 import altair as alt
 
-st.set_page_config(page_title="Crop Yield Advisor", page_icon="🌾", layout="centered")
+LOGO_PATH = os.path.join(os.path.dirname(__file__), "assets", "logo.png")
+BANNER_PATH = os.path.join(os.path.dirname(__file__), "assets", "banner.png")
+
+
+st.set_page_config(
+    page_title="Agritech Answers",
+    page_icon="🌾",
+    layout="centered",
+)
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
@@ -148,9 +156,12 @@ def parcel_context_inputs(key_prefix: str) -> dict:
 # ---------------------------------------------------------------------------
 # Page
 # ---------------------------------------------------------------------------
-st.title("🌾 Crop Yield Advisor")
-st.caption("Estimate yield for a specific crop, or find the most profitable crop for your parcel.")
- 
+if os.path.exists(BANNER_PATH):
+    st.image(BANNER_PATH, use_container_width=True)
+else:
+    st.title("Agritech Answers")
+    st.caption("Estimate yield for a specific crop, or find the most profitable crop for your parcel.")
+
 # Streamlit's default tabs render small and tightly packed. This targets
 # the underlying Base Web components (data-baseweb attributes are
 # Streamlit's own internal markup, stable across recent versions but not
@@ -199,17 +210,16 @@ with tab_predict:
             with center:
                 st.markdown(
                     f"""
-                    <p style="font-size:20px; background:#e1e1e1">
-                        <strong>Predicted yield for {result['crop']} is </strong>
-                        {result['predicted_yield_tons_per_hectare']:.2f} t/ha
+                    <p style="font-size:20px; color:#0B6B2F">
+                        Predicted yield for <strong> {result['crop']}</strong> is 
+                        <strong>{result['predicted_yield_tons_per_hectare']:.2f} </strong> t/ha 
                     </p>
                     """,
                     unsafe_allow_html=True,
                 )
- 
+
 with tab_recommend:
     st.subheader("Find the most profitable crop for your parcel")
-    st.caption("No crop needed here — every known crop is simulated and ranked for you.")
     context = parcel_context_inputs(key_prefix="recommend")
  
     left, center, right = st.columns([1, 2, 1])
