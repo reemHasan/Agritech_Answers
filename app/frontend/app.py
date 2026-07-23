@@ -14,6 +14,7 @@ import requests
 import streamlit as st
 import altair as alt
 
+st.set_page_config(page_title="Crop Yield Advisor", page_icon="🌾", layout="centered")
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
@@ -146,8 +147,6 @@ def parcel_context_inputs(key_prefix: str) -> dict:
 # ---------------------------------------------------------------------------
 # Page
 # ---------------------------------------------------------------------------
- 
-st.set_page_config(page_title="Crop Yield Advisor", page_icon="🌾", layout="centered")
 st.title("🌾 Crop Yield Advisor")
 st.caption("Estimate yield for a specific crop, or find the most profitable crop for your parcel.")
  
