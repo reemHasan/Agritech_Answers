@@ -19,9 +19,10 @@ st.set_page_config(page_title="Crop Yield Advisor", page_icon="🌾", layout="ce
 # Config
 # ---------------------------------------------------------------------------
 
-try:
-    API_URL = st.secrets["API_URL"]
-except (FileNotFoundError, KeyError):
+_secrets_path = os.path.join(os.path.dirname(__file__), ".streamlit", "secrets.toml")
+if os.path.exists(_secrets_path):
+    API_URL = st.secrets.get("API_URL", os.environ.get("API_URL", "http://localhost:8000"))
+else:
     API_URL = os.environ.get("API_URL", "http://localhost:8000")
 
 # render.yaml links API_URL via fromService's "host" property, which
@@ -30,7 +31,7 @@ except (FileNotFoundError, KeyError):
 # came from Render's auto-linking, a manually-set env var|streamlit.secrets with a full URL,
 # or the localhost default above.
 if API_URL and not API_URL.startswith(("http://", "https://")):
-    API_URL = f"https://{API_URL}"
+    API_URL = f"https://{API_URL}.onrender.com"
 
 REQUEST_TIMEOUT_SECONDS = 15
 
