@@ -1,58 +1,30 @@
-# .github/workflows/cd.yml
-# ─────────────────────────────────────────────────────────────────────────────
-# CD — Continuous Deployment
-# Runs ONLY when a push lands on main AND the CI workflow passes.
-# Responsible for: deploying to HuggingFace Spaces.
-# Does NOT run tests (CI already did that).
-#
-# Triggers:
-#   • ci.yml completes successfully on main branch
-#
-# Required GitHub Secrets (Settings → Secrets → Actions):
-#   HF_TOKEN      → HuggingFace token with WRITE access to your Space
-#   HF_SPACE_ID   → e.g. "your-username/Crop_Yield_API"
-
-name: CD — Deploy Crop Yield API to HF
+name: CD — API (Render)
 
 on:
   workflow_run:
-    workflows: ["CI — Crop Yield API"]     # exact name from ci.yml
+    workflows: ["CI — API"]
     types: [completed]
-    branches: [main]             # only when CI ran on main
+    branches: [main]
+  workflow_dispatch: {}
 
 jobs:
-
   deploy:
-    name: Deploy to HuggingFace Spaces
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
-
-    # Only deploy if CI actually passed — not if it failed or was cancelled
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0       # full history needed for git operations
-          lfs: true            # fetch Git LFS files (model .pkl, .parquet)
-
-      - name: Configure git identity
-        run: |
-          git config --global user.email "ci-bot@github-actions"
-          git config --global user.name  "GitHub Actions Bot"
-
-      - name: Push to HuggingFace Space
+      - name: Trigger Render deploy (API)
         env:
-          HF_TOKEN:    ${{ secrets.HF_TOKEN }}
-          HF_SPACE_ID: ${{ vars.HF_SPACE_ID }}
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_API_DEPLOY_HOOK_URL }}
         run: |
-          # HF Spaces are themselves git repos; pushing to the Space's
-          # remote triggers an automatic rebuild + redeploy of the
-          # Docker image on Hugging Face's side. --force is used because
-          # the Space's git history and this repo's history are unrelated.
-          git remote add space "https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE_ID}"
-          git push --force space main
-
-      - name: Deployment summary
-        run: |
-          echo "Deployed to https://huggingface.co/spaces/${{ vars.HF_SPACE_ID }}"
+          # Render's Deploy Hook is a secret, per-service URL (Render
+          # Dashboard -> crop-yield-api service -> Settings -> Deploy Hook)
+          # that, when POSTed to, triggers Render to pull the latest commit
+          # and rebuild/redeploy the Docker image.
+          response=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$RENDER_DEPLOY_HOOK_URL")
+          if [ "$response" -ne 200 ] && [ "$response" -ne 201 ]; then
+            echo "Render deploy hook returned HTTP $response"
+            exit 1
+          fi
+          echo "API deploy triggered successfully (HTTP $response)"
