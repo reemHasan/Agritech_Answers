@@ -37,3 +37,27 @@ jobs:
 
       - name: Run tests
         run: uv run pytest api/test_main.py -v
+
+  build:
+    # Validates the Docker image actually builds on every change -- catches
+    # Dockerfile regressions (e.g. a broken COPY path, missing WORKDIR)
+    # immediately in CI, rather than discovering them only when Render
+    # attempts the same build later during deployment.
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API image (no push -- validation only)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./app/backend
+          file: ./app/backend/Dockerfile
+          push: false
+          tags: crop-yield-api:ci-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
