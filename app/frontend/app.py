@@ -41,7 +41,7 @@ else:
 if API_URL and not API_URL.startswith(("http://", "https://")):
     API_URL = f"https://{API_URL}.onrender.com"
 
-REQUEST_TIMEOUT_SECONDS = 15
+REQUEST_TIMEOUT_SECONDS = 25
 
 
 @st.cache_data
@@ -191,15 +191,17 @@ tab_predict, tab_recommend = st.tabs(["📈 Predict Yield", "🏆 Recommend Best
  
 with tab_predict:
     st.subheader("Predict yield for a specific crop")
-    crop = st.selectbox("Crop", UI_OPTIONS["categorical"]["Crop"], key="predict_crop")
-    context = parcel_context_inputs(key_prefix="predict")
+    #with st.form("prediction_form", clear_on_submit=True):
+    with st.form("prediction_form"):
+        crop = st.selectbox("Crop", UI_OPTIONS["categorical"]["Crop"], key="predict_crop")
+        context = parcel_context_inputs(key_prefix="predict")
  
     # Centered button: an empty side column on each side narrows the
     # middle column, so the button (which stretches to its container's
     # width) ends up visually centered instead of spanning full width.
-    left, center, right = st.columns([1, 2, 1])
-    with center:
-        predict_clicked = st.button("Predict Yield", type="primary", key="predict_button", use_container_width=True)
+        left, center, right = st.columns([1, 2, 1])
+        with center:
+            predict_clicked = st.form_submit_button("Predict Yield", type="primary", key="predict_button", use_container_width=True)
  
     if predict_clicked:
         payload = {**context, "Crop": crop}
@@ -208,23 +210,17 @@ with tab_predict:
         if result:
             left, center, right = st.columns([1, 2, 1])
             with center:
-                st.markdown(
-                    f"""
-                    <p style="font-size:20px; color:#0B6B2F">
-                        Predicted yield for <strong> {result['crop']}</strong> is 
-                        <strong>{result['predicted_yield_tons_per_hectare']:.2f} </strong> t/ha 
-                    </p>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                st.info(f" Predicted yield for **{result['crop']}** is **{result['predicted_yield_tons_per_hectare']:.2f}** t/ha")
 
 with tab_recommend:
     st.subheader("Find the most profitable crop for your parcel")
-    context = parcel_context_inputs(key_prefix="recommend")
+    #with st.form("recommandation_form", clear_on_submit=True):
+    with st.form("recommandation_form"):
+        context = parcel_context_inputs(key_prefix="recommend")
  
-    left, center, right = st.columns([1, 2, 1])
-    with center:
-        recommend_clicked = st.button("Recommend Best Crop", type="primary", key="recommend_button", use_container_width=True)
+        left, center, right = st.columns([1, 2, 1])
+        with center:
+            recommend_clicked = st.form_submit_button("Recommend Best Crop", type="primary", key="recommend_button", use_container_width=True)
  
     if recommend_clicked:
         with st.spinner("Simulating all crops..."):
