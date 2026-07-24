@@ -236,8 +236,45 @@ with tab_recommend:
                     f" 🏆 Best choice: **{best['crop']}** "
                     f"with predicted yield **{best['predicted_yield_tons_per_hectare']:.3f}** t/ha"
                 )
-            st.write(df)
+            st.write("")
+            ranked_table, ranked_chart = st.columns([2, 2])
+            with ranked_table:
+                st.dataframe(
+                    df.rename(columns={
+                        "crop": "Crop",
+                        "predicted_yield_tons_per_hectare": "Predicted Yield (t/ha)",
+                        "rank": "Rank",
+                    }),
+                    hide_index=True,
+                    use_container_width=True,
+                )
+            with ranked_chart:
+                df["Color"] = df["rank"].apply(
+                    lambda r: "Best crop" if r == 1 else "Other crops"
+                )
+                chart = (
+                    alt.Chart(df)
+                    .mark_bar()
+                    .encode(
+                        x=alt.X("crop:N", title="Crop", sort="-y"),
+                        y=alt.Y("predicted_yield_tons_per_hectare:Q", title="Predicted Yield (t/ha)"),
+                        color=alt.Color(
+                            "Color:N",
+                            scale=alt.Scale(
+                                domain=["Best crop", "Other crops"],
+                                range=["#2ca02c", "#bdbdbd"]  # green and gray
+                            ),
+                            legend=None,
+                        ),
+                        tooltip=[
+                            "crop",
+                            "predicted_yield_tons_per_hectare",
+                            "rank",
+                        ],
+                    )
+                )
 
+                st.altair_chart(chart, use_container_width=True)
 
 st.divider()
 st.caption(f"Connected to API: `{API_URL}`")
