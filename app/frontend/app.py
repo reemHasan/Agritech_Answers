@@ -5,10 +5,12 @@ Calls the FastAPI backend's /predict and /recommend endpoints.
 
 Configure the backend URL via the API_URL environment variable (or
 Streamlit secrets) -- defaults to localhost for local dev
-against `uvicorn main:app --reload` running in app/backend/api.
+against `uvicorn api.src.main:app --reload` running in app/backend/api/src.
 """
 
 import os
+import matplotlib.pyplot as plt
+
 import pandas as pd
 import requests
 import streamlit as st
@@ -159,6 +161,53 @@ def call_recommend(payload: dict) -> dict | None:
     return None
 
 
+def plot_waterfall(base_value: float, contributions: list[dict], prediction: float):
+    """Builds a matplotlib waterfall chart from the API's per-feature
+    contributions (already the ranked, human-readable feature names --
+    one-hot dummies are pre-grouped back to their parent feature by the
+    API). Rendering happens here, in the UI, deliberately -- the API only
+    computes the numbers (cheap, closed-form for a linear model), keeping
+    matplotlib's rendering cost off the API entirely."""
+    labels = ["Base value"] + [c["feature"] for c in contributions] + ["Predicted yield"]
+    values = [base_value] + [c["contribution"] for c in contributions] + [prediction]
+
+    running_total = base_value
+    starts = [0.0]
+    for c in contributions:
+        starts.append(running_total)
+        running_total += c["contribution"]
+    starts.append(0.0)  # final bar starts from zero (it's the total, not a delta)
+
+    bar_heights = [base_value] + [c["contribution"] for c in contributions] + [prediction]
+    colors = (
+        ["#7f7f7f"]
+        + ["#2ca02c" if c["contribution"] >= 0 else "#d62728" for c in contributions]
+        + ["#1f77b4"]
+    )
+
+    fig, ax = plt.subplots(figsize=(8, max(3.5, 0.4 * len(labels))))
+    # Background colors
+    bg_color = "#FAF8F4"
+    fig.patch.set_facecolor(bg_color)   # Figure background
+    ax.set_facecolor(bg_color)          # Plot area background
+
+    y_pos = range(len(labels))
+    ax.barh(y_pos, bar_heights, left=starts, color=colors)
+    ax.set_yticks(y_pos, labels=labels)
+    ax.invert_yaxis()
+    ax.axvline(0, color="black", linewidth=0.8)
+    ax.set_xlabel("Contribution to predicted yield (t/ha)")
+    ax.set_title("Feature contributions in the current prediction")
+
+    for i, (start, val) in enumerate(zip(starts, bar_heights)):
+        label_x = start + val if i not in (0, len(labels) - 1) else val
+        ax.text(label_x, i, f" {val:+.2f}" if i not in (0, len(labels) - 1) else f" {val:.2f}",
+                va="center", fontsize=9)
+
+    fig.tight_layout()
+    return fig
+
+
 # ---------------------------------------------------------------------------
 # Shared parcel-context input widgets
 # ---------------------------------------------------------------------------
@@ -175,6 +224,7 @@ def parcel_context_inputs(key_prefix: str) -> dict:
  
     # --- Checkboxes ----------------------------------------------------
     col,col1, col2, col3 = st.columns([1, 1, 1, 1])
+
     with col1:
         fertilizer = st.checkbox("Fertilizer Used", value=True, key=f"{key_prefix}_fertilizer")
     with col2:
@@ -278,6 +328,15 @@ with tab_predict:
             left, center, right = st.columns([1, 2, 1])
             with center:
                 st.info(f" Predicted yield for **{result['crop']}** is **{result['predicted_yield_tons_per_hectare']:.2f}** t/ha")
+
+            if result.get("contributions"):
+                st.warning("**Which feature contributed the most in the prediction?**")
+                fig = plot_waterfall(
+                    base_value=result["base_value"],
+                    contributions=result["contributions"],
+                    prediction=result["predicted_yield_tons_per_hectare"],
+                )
+                st.pyplot(fig)
 
 with tab_recommend:
     st.subheader("Find the most profitable crop for your parcel")

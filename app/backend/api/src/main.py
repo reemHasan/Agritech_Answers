@@ -172,7 +172,8 @@ def predict(request: PredictRequest, http_request: Request):
     logger.info("predict", extra={
         "request_id": getattr(http_request.state, "request_id", None),
         "crop": request.Crop.value,
-        "region": request.Region.value,
+        "base_value": base_value,
+        "contributions": contributions,
         "predicted_yield_tons_per_hectare": round(predicted_yield, 3),
     })
 
