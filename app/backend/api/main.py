@@ -12,23 +12,26 @@ See pydantic_models.py for request/response schemas, logger.py for
 structured logging setup, and helpers.py for model loading and prediction
 logic.
 """
-from api.logger import logger
-from api.helpers import  predict_yield, load_model
-from api.pydantic_models import (
-    ALL_CROPS,
-    PredictRequest,
-    PredictResponse,
-    RecommendRequest,
-    RecommendResponse,
-    CropRecommendation,
-)
 import os
 import time
 import uuid
 from contextlib import asynccontextmanager
+
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
+
+from api.helpers import load_model, predict_yield
+from api.logger import logger
+from api.pydantic_models import (
+    ALL_CROPS,
+    CropRecommendation,
+    PredictRequest,
+    PredictResponse,
+    RecommendRequest,
+    RecommendResponse,
+)
+
 load_dotenv()
 
 
