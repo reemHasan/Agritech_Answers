@@ -2,6 +2,7 @@
 
 [![CI — API](https://github.com/reemHasan/Agritech_Answers/actions/workflows/ci_api.yml/badge.svg)](https://github.com/reemHasan/Agritech_Answers/actions/workflows/ci_api.yml)
 [![CD — API](https://github.com/reemHasan/Agritech_Answers/actions/workflows/cd_api.yml/badge.svg)](https://github.com/reemHasan/Agritech_Answers/actions/workflows/cd_api.yml)
+[![CI — UI](https://github.com/reemHasan/Agritech_Answers/actions/workflows/ci_ui.yml/badge.svg)](https://github.com/reemHasan/Agritech_Answers/actions/workflows/ci_ui.yml)
 [![CD — UI](https://github.com/reemHasan/Agritech_Answers/actions/workflows/cd_ui.yml/badge.svg)](https://github.com/reemHasan/Agritech_Answers/actions/workflows/cd_ui.yml)
 
 Crop yield prediction and recommendation system for farmers: a FastAPI
