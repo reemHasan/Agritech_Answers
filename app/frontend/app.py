@@ -61,19 +61,55 @@ UI_OPTIONS = load_ui_options()
 # ---------------------------------------------------------------------------
 # API calls
 # ---------------------------------------------------------------------------
-
 def call_predict(payload: dict) -> dict | None:
     try:
-        response = requests.post(f"{API_URL}/predict", json=payload, timeout=REQUEST_TIMEOUT_SECONDS)
+        response = requests.post(
+            f"{API_URL}/predict",
+            json=payload,
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+
         response.raise_for_status()
-        return response.json()
+
+        try:
+            return response.json()
+        except requests.exceptions.JSONDecodeError:
+            st.error(
+                "The API returned an invalid response (expected JSON).\n\n"
+                f"Status code: {response.status_code}\n"
+                f"Response:\n{response.text}"
+            )
+            return None
+
     except requests.exceptions.ConnectionError:
-        st.error(f"Could not reach the API at {API_URL}. Is it running and reachable?")
+        st.error(
+            f"Could not reach the API at {API_URL}. "
+            "Please verify that the backend is running."
+        )
+
     except requests.exceptions.Timeout:
-        st.error("The API took too long to respond. Please try again.")
+        st.error(
+            "The API took too long to respond. Please try again."
+        )
+
     except requests.exceptions.HTTPError as e:
-        detail = e.response.json().get("detail", str(e)) if e.response is not None else str(e)
-        st.error(f"API error: {detail}")
+        response = e.response
+        if response is not None:
+            try:
+                detail = response.json().get("detail", response.text)
+            except requests.exceptions.JSONDecodeError:
+                detail = response.text
+
+            st.error(
+                f"API returned HTTP {response.status_code}:\n{detail}"
+            )
+        else:
+            st.error(str(e))
+    except requests.exceptions.RequestException as e:
+        st.error(f"Request failed: {e}")
+
+    except Exception as e:
+        st.error(f"Unexpected error: {e}")
     return None
 
 
@@ -81,14 +117,45 @@ def call_recommend(payload: dict) -> dict | None:
     try:
         response = requests.post(f"{API_URL}/recommend", json=payload, timeout=REQUEST_TIMEOUT_SECONDS)
         response.raise_for_status()
-        return response.json()
+        try:
+            return response.json()
+        except requests.exceptions.JSONDecodeError: #in case api inactive
+            st.error(
+                "The API returned an invalid response (expected JSON).\n\n"
+                f"Status code: {response.status_code}\n"
+                f"Response:\n{response.text}"
+            )
+            return None
+
     except requests.exceptions.ConnectionError:
-        st.error(f"Could not reach the API at {API_URL}. Is it running and reachable?")
+        st.error(
+            f"Could not reach the API at {API_URL}. "
+            "Please verify that the backend is running."
+        )
+
     except requests.exceptions.Timeout:
-        st.error("The API took too long to respond. Please try again.")
+        st.error(
+            "The API took too long to respond. Please try again."
+        )
+
     except requests.exceptions.HTTPError as e:
-        detail = e.response.json().get("detail", str(e)) if e.response is not None else str(e)
-        st.error(f"API error: {detail}")
+        response = e.response
+        if response is not None:
+            try:
+                detail = response.json().get("detail", response.text)
+            except requests.exceptions.JSONDecodeError:
+                detail = response.text
+
+            st.error(
+                f"API returned HTTP {response.status_code}:\n{detail}"
+            )
+        else:
+            st.error(str(e))
+    except requests.exceptions.RequestException as e:
+        st.error(f"Request failed: {e}")
+
+    except Exception as e:
+        st.error(f"Unexpected error: {e}")
     return None
 
 
