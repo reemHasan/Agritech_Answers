@@ -1,15 +1,17 @@
 name: CD — UI (Render)
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI — UI"]
+    types: [completed]
     branches: [main]
-    paths:
-      - "app/frontend/**"
-      - ".github/workflows/cd_ui.yml"
   workflow_dispatch: {}
 
 jobs:
   deploy:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Render deploy (UI)

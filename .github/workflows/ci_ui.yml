@@ -1,0 +1,41 @@
+name: CI — UI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/frontend/**"
+      - ".github/workflows/ci_ui.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "app/frontend/**"
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    # No unit tests here: the frontend is a thin client with no business/ML
+    # logic of its own (everything routes through the already-tested API),
+    # so a dedicated test suite wasn't judged worth the added maintenance.
+    # Docker build validation is still worth doing on its own, though --
+    # it's an infrastructure check, not a business-logic check, and it
+    # catches a broken Dockerfile (bad COPY path, missing file, etc.)
+    # immediately in CI rather than only when Render attempts the same
+    # build later during deployment.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build UI image (no push -- validation only)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./app/frontend
+          file: ./app/frontend/Dockerfile
+          push: false
+          tags: crop-yield-ui:ci-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
