@@ -17,9 +17,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import joblib
-#from fastapi.testclient import TestClient  # noqa: E402
-import api.main as main_module  # noqa: E402
-#from api.main import app  # noqa: E402
+import api.src.main as main_module  # noqa: E402
 
 class FakeModel:
     """Deterministic stand-in for the real Ridge pipeline. Returns a fixed
@@ -48,20 +46,6 @@ class NegativeFakeModel:
         return np.array([-3.5])
 
 
-"""@pytest.fixture
-def fake_model_file(tmp_path, monkeypatch):
-    # create an empty file
-    model_path = tmp_path / "ridge.joblib"
-    model_path.touch()
-
-    # set env var
-    monkeypatch.setenv("MODEL_PATH", str(model_path))
-
-    # mock joblib.load()
-    monkeypatch.setattr(joblib, "load", lambda _: FakeModel())
-
-    return model_path"""
-
 # Patch load_model as it exists in main's own namespace (main.py does
 # `from helpers import load_model`, which binds a local reference in
 # main's module dict -- patching helpers.load_model after that point
@@ -70,7 +54,7 @@ def fake_model_file(tmp_path, monkeypatch):
 main_module.load_model = lambda path: FakeModel()
  
 from fastapi.testclient import TestClient  # noqa: E402
-from api.main import app  # noqa: E402
+from api.src.main import app  # noqa: E402
 
 @pytest.fixture
 def client():

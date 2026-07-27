@@ -36,7 +36,7 @@ jobs:
         run: uv sync --frozen
 
       - name: Run tests
-        run: uv run pytest api/test_main.py -v
+        run: uv run pytest -v
 
   build:
     # Validates the Docker image actually builds on every change -- catches

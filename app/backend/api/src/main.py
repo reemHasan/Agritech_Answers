@@ -12,25 +12,34 @@ See pydantic_models.py for request/response schemas, logger.py for
 structured logging setup, and helpers.py for model loading and prediction
 logic.
 """
+
+from contextlib import asynccontextmanager
 import os
 import time
 import uuid
-from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.helpers import load_model, predict_yield
-from api.logger import logger
-from api.pydantic_models import (
+from api.src.helpers import (
+    compute_feature_contributions,
+    context_to_row,
+    load_model,
+    predict_yield,
+)
+from api.src.logger import logger
+from api.src.pydantic_models import (
     ALL_CROPS,
     CropRecommendation,
+    FeatureContribution,
     PredictRequest,
     PredictResponse,
     RecommendRequest,
     RecommendResponse,
 )
+
+
 
 load_dotenv()
 
@@ -138,6 +147,28 @@ def predict(request: PredictRequest, http_request: Request):
 
     predicted_yield = predict_yield(model=app.state.model, context=request, crop=request.Crop.value)
 
+    # Closed-form linear feature contributions (exact SHAP-equivalent for
+    # a linear model, no `shap` dependency needed -- see helpers.py).
+    # Returns None if `model` isn't a full pipeline exposing a linear
+    # model's coefficients, in which case the response just carries empty contributions
+    # rather than erroring.
+    # convert inserted info into one row dataframe with the same feature names and order as in train dataset
+    row = context_to_row(request, request.Crop.value)
+    explanation = compute_feature_contributions(app.state.model, row)
+
+    base_value = 0.0
+    contributions = []
+    if explanation is not None:
+        base_value = round(explanation["base_value"], 4)
+        contributions = [
+            FeatureContribution(feature=name, contribution=round(value, 4))
+            for name, value in sorted(
+                explanation["contributions"].items(),
+                key=lambda kv: abs(kv[1]),
+                reverse=True,
+            )
+        ]
+
     logger.info("predict", extra={
         "request_id": getattr(http_request.state, "request_id", None),
         "crop": request.Crop.value,
@@ -148,6 +179,8 @@ def predict(request: PredictRequest, http_request: Request):
     return PredictResponse(
         crop=request.Crop.value,
         predicted_yield_tons_per_hectare=round(predicted_yield, 3),
+        base_value=base_value,
+        contributions=contributions,
     )
 
 

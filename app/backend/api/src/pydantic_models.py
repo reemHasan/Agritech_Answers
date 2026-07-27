@@ -6,7 +6,7 @@
 # OneHotEncoder's handle_unknown="ignore".
 
 from enum import Enum
-from typing import List
+from typing import ClassVar, List
 from pydantic import BaseModel, Field, StrictBool
 
 class Region(str, Enum):
@@ -57,7 +57,7 @@ class ParcelContext(BaseModel):
     Days_to_Harvest: int = Field(..., ge=60, le=149, description="Days from planting to harvest")
 
     class Config:
-        json_schema_extra = {
+        json_schema_extra: ClassVar[dict] = {
             "example": {
                 "Region": "West",
                 "Soil_Type": "Loam",
@@ -75,7 +75,7 @@ class PredictRequest(ParcelContext):
     Crop: Crop
 
     class Config:
-        json_schema_extra = {
+        json_schema_extra : ClassVar[dict] = {
             "example": {
                 "Region": "West",
                 "Soil_Type": "Loam",
@@ -90,9 +90,16 @@ class PredictRequest(ParcelContext):
         }
 
 
+class FeatureContribution(BaseModel):
+    feature: str
+    contribution: float
+
+
 class PredictResponse(BaseModel):
     crop: str
     predicted_yield_tons_per_hectare: float = Field(..., ge=0)
+    base_value: float = 0.0
+    contributions: List[FeatureContribution] = []
 
 
 class RecommendRequest(ParcelContext):
