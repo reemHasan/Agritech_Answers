@@ -23,7 +23,8 @@ COPY --from=builder /app/.venv /app/.venv
 
 # API source: main.py, pydantic_models.py, logger.py, helpers.py
 #COPY api/*.py ./api/
-COPY api/ ./api/
+#COPY api/ ./api/
+COPY api/src/*.py ./api/
 # Trained model artifact (plain joblib export -- see ml/src/train_final_model.py)
 COPY model/ridge_pipeline.joblib ./model/ridge_pipeline.joblib
 
@@ -35,7 +36,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-#WORKDIR /app/api
+WORKDIR /app/api
 
 # Render assigns the listen port dynamically via $PORT at runtime.
 # Default to 8000 for local `docker run` where $PORT isn't set.
@@ -44,4 +45,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://localhost:{os.environ.get(\"PORT\", 8000)}/')" || exit 1
 
-CMD uvicorn api.src.main:app --host 0.0.0.0 --port ${PORT:-8000}
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
