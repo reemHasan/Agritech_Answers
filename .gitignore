@@ -69,8 +69,10 @@ docs/_build/
 target/
 
 # Data (user-provided, too large)
-data/raw_data/
-data/processed_data/
+#data/raw_data/
+#data/processed_data/
+data/*
+!data/.gitkeep
 
 # MLflow
 ml/mlruns/

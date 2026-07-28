@@ -22,14 +22,14 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.src.helpers import (
+from helpers import (
     compute_feature_contributions,
     context_to_row,
     load_model,
     predict_yield,
 )
-from api.src.logger import logger
-from api.src.pydantic_models import (
+from logger import logger
+from pydantic_models import (
     ALL_CROPS,
     CropRecommendation,
     FeatureContribution,

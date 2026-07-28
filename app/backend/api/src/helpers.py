@@ -6,8 +6,8 @@ import os
 import joblib
 import pandas as pd
 
-from api.src.logger import logger
-from api.src.pydantic_models import ParcelContext
+from logger import logger
+from pydantic_models import ParcelContext
  
  
 def load_model(model_path: str):
