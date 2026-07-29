@@ -50,11 +50,11 @@ flowchart TB
             API --> MODEL
         end
 
-        UI <-->|HTTP REST API<br/>/predict<br/>/recommend| API
+        Frontend <-->|HTTP REST API<br/>/predict<br/>/recommend| Backend
     end
 
-    User -->|Browser| UI
-    UI -->|Prediction<br/>Waterfall chart<br/>Feature importance<br/>Recommendations| User
+    User -->|Browser| Frontend
+    Frontend -->|Prediction<br/><br/>Recommendations| User
 ```
 
 - **Frontend and backend are fully decoupled**, deployed as two independent Render services communicating over HTTP. The Streamlit app contains **no ML logic** — it only calls the API and renders the response.
