@@ -37,7 +37,7 @@ The synthetic dataset gave a large, clean sample to train on; the real dataset w
 flowchart LR
 
     %% User
-    U([👤 Farmer / User])
+    U([👤 Farmer])
 
     %% Frontend
     subgraph FE["🌐 Streamlit Frontend (Render)"]
@@ -51,14 +51,22 @@ flowchart LR
         API --> MODEL
     end
 
+    %% Prediction flow
+    P((Prediction))
+    APP -->|POST /predict| P
+    P --> API
+    API -->|Predicted yield + SHAP values| P
+    P --> APP
+
+    %% Recommendation flow
+    R((Recommendation))
+    APP -->|POST /recommend| R
+    R --> API
+    API -->|Recommended crops| R
+    R --> APP
+
     %% Flow
     U -->|Interact| APP
-    APP -->|POST /predict| API
-    API -->|Prediction + SHAP values| APP
-
-    APP -->|POST /recommend| API
-    API -->|Crop recommendations| APP
-
     APP -->|Display prediction<br/>Recommendation table| U
 ```
 
