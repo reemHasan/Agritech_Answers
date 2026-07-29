@@ -54,12 +54,12 @@ flowchart LR
     %% Flow
     U -->|Interact| APP
     APP -->|POST /predict| API
-    APP -->|POST /recommend| API
-
     API -->|Prediction + SHAP values| APP
+
+    APP -->|POST /recommend| API
     API -->|Crop recommendations| APP
 
-    APP -->|Display prediction<br/>Feature contribution chart<br/>Recommendation table| U
+    APP -->|Display prediction<br/>Recommendation table| U
 ```
 
 - **Frontend and backend are fully decoupled**, deployed as two independent Render services communicating over HTTP. The Streamlit app contains **no ML logic** — it only calls the API and renders the response.
