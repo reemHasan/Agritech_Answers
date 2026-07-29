@@ -34,27 +34,32 @@ The synthetic dataset gave a large, clean sample to train on; the real dataset w
 ## 2. Project Architecture
 
 ```mermaid
-flowchart TB
+flowchart LR
 
-    User([👤 Farmer])
+    %% User
+    U([👤 Farmer / User])
 
-    subgraph Render["☁️ Render Cloud"]
-
-        subgraph Frontend["🌐 Streamlit Service"]
-            UI["app.py"]
-        end
-
-        subgraph Backend["⚡ FastAPI Service"]
-            API["main.py"]
-            MODEL[("ridge_pipeline.joblib")]
-            API --> MODEL
-        end
-
-        Frontend <-->|HTTP REST API<br/>/predict<br/>/recommend| Backend
+    %% Frontend
+    subgraph FE["🌐 Streamlit Frontend (Render)"]
+        APP["app.py<br/>Prediction & Recommendation UI"]
     end
 
-    User -->|Browser| Frontend
-    Frontend -->|Prediction<br/><br/>Recommendations| User
+    %% Backend
+    subgraph BE["⚡ FastAPI Backend (Render)"]
+        API["REST API<br/>main.py"]
+        MODEL[("Ridge ML Pipeline<br/>ridge_pipeline.joblib")]
+        API --> MODEL
+    end
+
+    %% Flow
+    U -->|Interact| APP
+    APP -->|POST /predict| API
+    APP -->|POST /recommend| API
+
+    API -->|Prediction + SHAP values| APP
+    API -->|Crop recommendations| APP
+
+    APP -->|Display prediction<br/>Feature contribution chart<br/>Recommendation table| U
 ```
 
 - **Frontend and backend are fully decoupled**, deployed as two independent Render services communicating over HTTP. The Streamlit app contains **no ML logic** — it only calls the API and renders the response.
