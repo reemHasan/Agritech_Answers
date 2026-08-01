@@ -126,7 +126,21 @@ def evaluate(y_true, y_pred) -> dict:
         "rmse": np.sqrt(mean_squared_error(y_true, y_pred)),
     }
 
-
+def _parent_feature(col_name: str) -> str:
+    """Maps a post-ColumnTransformer column name back to its original
+    feature (e.g. 'cat__Area_France' -> 'Area'), so one-hot dummies
+    collapse back into one bar per category. Especially important here:
+    Area has 100+ countries one-hot encoded under Ridge, which would
+    otherwise fragment into 100+ separate bars."""
+    if col_name.startswith("cat__"):
+        stripped = col_name[len("cat__"):]
+        for cat in NATIVE_CATEGORICAL:
+            if stripped.startswith(cat + "_"):
+                return cat
+        return stripped
+    if col_name.startswith("num__"):
+        return col_name[len("num__"):]
+    return col_name
 # ---------------------------------------------------------------------------
 # CV run for one (model, feature_set) combination
 # ---------------------------------------------------------------------------
@@ -187,8 +201,31 @@ def run_ablation_arm(model_name: str, run_name: str, feature_set: list,
         mlflow.log_metric("std_val_r2", float(np.std(fold_r2)))
 
         # --- Mean +/- std feature importance / coefficients across folds ---
+        # One-hot dummies are grouped back to their parent feature at the
+        # PER-FOLD level, then averaged across folds -- not averaged-then-
+        # grouped. This preserves the correct fold-to-fold correlation
+        # between a categorical's dummy levels, giving a statistically
+        # honest mean/std for the grouped value.
         importance_label = "Feature Importance" if model_name == "catboost" else "Coefficient"
-        importance_df = pd.DataFrame(fold_importances)
+        grouped_fold_importances = []
+        feature_type = {}  # "single" (numeric/bool, or catboost's unfragmented categoricals) vs "range" (ridge one-hot groups)
+        for fold_dict in fold_importances:
+            raw_by_parent = {}
+            for col, val in fold_dict.items():
+                parent = _parent_feature(col)
+                raw_by_parent.setdefault(parent, []).append(val)
+
+            grouped = {}
+            for parent, values in raw_by_parent.items():
+                if len(values) == 1:
+                    grouped[parent] = values[0]
+                    feature_type[parent] = "single"
+                else:
+                    grouped[parent] = max(values) - min(values)
+                    feature_type[parent] = "range"
+            grouped_fold_importances.append(grouped)
+
+        importance_df = pd.DataFrame(grouped_fold_importances)
         importance_summary = pd.DataFrame({
             "mean_value": importance_df.mean(),
             "std_value": importance_df.std(),
@@ -210,13 +247,17 @@ def run_ablation_arm(model_name: str, run_name: str, feature_set: list,
             mlflow.log_artifact(f"{model_name}_{run_name}_importance.csv")
 
         plot_df = importance_summary.sort_values("abs_mean", ascending=True)
-        colors = ["#d62728" if v < 0 else "#2ca02c" for v in plot_df["mean_value"]] \
-            if model_name == "ridge" else None  # CatBoost importances are non-negative by nature
+        colors = [
+            "#3a6ea5" if feature_type.get(feat) == "range"
+            else ("#d62728" if v < 0 else "#2ca02c")
+            for feat, v in zip(plot_df.index, plot_df["mean_value"])
+        ] if model_name == "ridge" else None  # CatBoost importances are non-negative by nature
 
         plt.figure(figsize=(9, max(4, len(plot_df) * 0.3)))
         plt.barh(plot_df.index, plot_df["mean_value"], xerr=plot_df["std_value"], color=colors)
         plt.axvline(0, color="black", linewidth=0.8)
-        plt.xlabel(f"Mean {importance_label} (± std across {N_SPLITS} folds)")
+        xlabel_suffix = " | blue = range across one-hot levels, not a signed coefficient" if model_name == "ridge" else ""
+        plt.xlabel(f"Mean {importance_label} (± std across {N_SPLITS} folds){xlabel_suffix}")
         plt.title(f"{model_name} / {run_name}: {importance_label}")
         plt.tight_layout()
         chart_path = output_path/f"{model_name}_{run_name}_importance.png"
@@ -272,7 +313,7 @@ def log_comparison(model_name: str, native_scores, enriched_scores, native_run_i
 
 def main():
     base_dir = Path(__file__).resolve().parent.parent
-    ml_artifact_folder = base_dir/"ml_artifact"/"trak2_ablation"
+    ml_artifact_folder = base_dir/"ml_artifact"/"trak2_ablation3"
     ml_artifact_folder.mkdir(parents=True, exist_ok=True)
     
     mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)

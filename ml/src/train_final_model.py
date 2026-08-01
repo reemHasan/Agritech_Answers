@@ -82,30 +82,22 @@ def evaluate(y_true, y_pred) -> dict:
         "rmse": np.sqrt(mean_squared_error(y_true, y_pred)),
     }
 
-# ---------------------------------------------------------------------------
-# Visualize
-# ---------------------------------------------------------------------------
-def coefficient_plot(plot_df:pd.DataFrame, title:str, plot_name:str, output_path:str)-> plt:
-        """ Coefficient plot: positive vs negative, sorted by magnitude ---
-         Diverging colors make the direction of each effect immediately
-         visible (does this feature push yield up or down), while sorting
-         by absolute value (not raw value) keeps the biggest effects at
-         the top regardless of sign -- a plain sort by raw coefficient
-         would bury a strong negative effect at the bottom, far from the
-         strong positive ones at the top.
-        """
-        colors = ["#d62728" if c < 0 else "#2ca02c" for c in plot_df["coefficient"]]
- 
-        plt.figure(figsize=(9, max(4, len(plot_df) * 0.3)))
-        plt.barh(plot_df["feature"], plot_df["coefficient"], color=colors)
-        plt.axvline(0, color="black", linewidth=0.8)
-        plt.xlabel("Coefficient (standardized features)")
-        plt.title(title)
-        plt.tight_layout()
-        coef_chart_path = output_path/plot_name
-        plt.savefig(coef_chart_path, dpi=150)
-        mlflow.log_artifact(coef_chart_path)
-        plt.close()
+def _parent_feature(col_name: str) -> str:
+    """Maps a post-ColumnTransformer column name back to its original
+    feature (e.g. 'cat__Soil_Type_Clay' -> 'Soil_Type'), so one-hot
+    dummies collapse back into one human-readable bar per category
+    instead of fragmenting across many small dummy-level bars."""
+    if col_name.startswith("cat__"):
+        stripped = col_name[len("cat__"):]
+        for cat in CATEGORICAL_FEATURES:
+            if stripped.startswith(cat + "_"):
+                return cat
+        return stripped
+    if col_name.startswith("num__"):
+        return col_name[len("num__"):]
+    if col_name.startswith("bool__"):
+        return col_name[len("bool__"):]
+    return col_name
 
 # ---------------------------------------------------------------------------
 # Main
@@ -177,21 +169,80 @@ def main(output_path:str):
         coef_html = output_path/"final_model_coefficients.html"
         coef_df.drop(columns="abs_coef").to_html(coef_html, index=False)
         mlflow.log_artifact(coef_html)
-        print("\nTop coefficients:")
+        print("\nTop coefficients (raw, one-hot dummies not grouped):")
         print(coef_df.drop(columns="abs_coef").head(10).to_string(index=False))
+        # --- Grouped coefficients: one-hot dummies collapsed to parent -----
+        # IMPORTANT: for a fully one-hot-encoded categorical (all levels,
+        # no drop='first') combined with an intercept, Ridge's L2 penalty
+        # picks the minimum-norm solution among infinitely many equally
+        # valid ones -- and that solution has the dummy coefficients of
+        # each categorical group sum to ~0 BY CONSTRUCTION, regardless of
+        # whether that categorical actually matters. Summing is therefore
+        # meaningless for these groups. The meaningful question is "how
+        # much does switching between levels move the prediction" -- i.e.
+        # the RANGE (max - min) of the coefficients within the group, not
+        # their sum. Numeric/boolean features map to a single raw column
+        # each (no such redundancy), so their "grouped" value is just that
+        # one coefficient, unchanged.
+        #
+        # NOTE: this mixes two different statistics in one column --
+        # numeric/boolean rows are a true SIGNED coefficient (direction
+        # matters), while categorical rows are a non-negative RANGE
+        # (direction doesn't apply, only magnitude). Kept in one table for
+        # a single "which feature matters most" ranking, but the "type"
+        # column below makes the distinction explicit so it's never
+        # mistaken for a like-for-like comparison.
+        grouped_raw = {}
+        for name, coef in zip(coef_df["feature"], coef_df["coefficient"]):
+            parent = _parent_feature(name)
+            grouped_raw.setdefault(parent, []).append(coef)
 
-        
-        # --- Coefficient plot: positive vs negative, sorted by magnitude ---
-        # Diverging colors make the direction of each effect immediately
-        # visible (does this feature push yield up or down), while sorting
-        # by absolute value (not raw value) keeps the biggest effects at
-        # the top regardless of sign -- a plain sort by raw coefficient
-        # would bury a strong negative effect at the bottom, far from the
-        # strong positive ones at the top.
-        coef_plot_df = coef_df.sort_values("abs_coef", ascending=True)  # ascending for horizontal barh top-down
-        coefficient_plot(coef_plot_df, title="Ridge Coefficients — Positive (green) vs Negative (red)",
-                         plot_name="final_model_coefficients.png", output_path=output_path)
- 
+        grouped_coef, grouped_type = {}, {}
+        for parent, values in grouped_raw.items():
+            if len(values) == 1:
+                grouped_coef[parent] = values[0]
+                grouped_type[parent] = "coefficient"
+            else:
+                grouped_coef[parent] = max(values) - min(values)
+                grouped_type[parent] = "range (max-min)"
+
+        grouped_coef_df = pd.DataFrame({
+            "feature": list(grouped_coef.keys()),
+            "coefficient": list(grouped_coef.values()),
+            "type": [grouped_type[f] for f in grouped_coef.keys()],
+        }).assign(abs_coef=lambda d: d["coefficient"].abs()).sort_values("abs_coef", ascending=False)
+
+        grouped_html = output_path/"final_model_coefficients_grouped.html"
+        grouped_coef_df.drop(columns="abs_coef").to_html(grouped_html, index=False)
+        mlflow.log_artifact(grouped_html)
+        print("\nGrouped coefficients (numeric/boolean: signed coefficient; categorical: range across levels):")
+        print(grouped_coef_df.drop(columns="abs_coef").to_string(index=False))
+
+        # --- Coefficient plot: sorted by magnitude, colored by type --------
+        # Numeric/boolean rows are a true signed coefficient (red=negative,
+        # green=positive relationship with yield). Categorical rows are a
+        # non-negative RANGE across levels (see note above) -- coloring
+        # these green/red would falsely imply a "positive/negative
+        # relationship", which doesn't apply to a range. Given a distinct
+        # neutral color (blue) instead, so the two statistic types are
+        # visually distinguishable, not just distinguishable in a table.
+        coef_plot_df = grouped_coef_df.sort_values("abs_coef", ascending=True)  # ascending for horizontal barh top-down
+        colors = [
+            "#3a6ea5" if t.startswith("range") else ("#d62728" if c < 0 else "#2ca02c")
+            for c, t in zip(coef_plot_df["coefficient"], coef_plot_df["type"])
+        ]
+
+        plt.figure(figsize=(9, max(4, len(coef_plot_df) * 0.35)))
+        plt.barh(coef_plot_df["feature"], coef_plot_df["coefficient"], color=colors)
+        plt.axvline(0, color="black", linewidth=0.8)
+        plt.xlabel("Numeric/boolean: signed coefficient (red/green)  |  Categorical: range across levels (blue)")
+        plt.title("Ridge Coefficients — Grouped by Feature")
+        plt.tight_layout()
+        coef_chart_path = output_path/"final_model_coefficients.png"
+        plt.savefig(coef_chart_path, dpi=150)
+        mlflow.log_artifact(coef_chart_path)
+        plt.close()
+
         # --- Zoomed-in version: excludes the top 3 dominant features -------
         # Fertilizer_Used / Rainfall_mm / Irrigation_Used sit an order of
         # magnitude above everything else, which flattens all the minor
@@ -201,10 +252,24 @@ def main(output_path:str):
         # are visible -- useful to confirm none of the "minor" features is
         # secretly larger than the others once the dominant ones are removed.
         top_n_excluded = 3
-        excluded_features = coef_df.sort_values("abs_coef", ascending=False).head(top_n_excluded)["feature"].tolist()
+        excluded_features = grouped_coef_df.sort_values("abs_coef", ascending=False).head(top_n_excluded)["feature"].tolist()
         zoomed_df = coef_plot_df[~coef_plot_df["feature"].isin(excluded_features)]
-        coefficient_plot(zoomed_df, title=f"Ridge Coefficients — Zoomed In (excludes top {top_n_excluded}:",
-                         plot_name="final_model_coefficients_zoomed.png", output_path=output_path)
+        zoomed_colors = [
+            "#3a6ea5" if t.startswith("range") else ("#d62728" if c < 0 else "#2ca02c")
+            for c, t in zip(zoomed_df["coefficient"], zoomed_df["type"])
+        ]
+
+        plt.figure(figsize=(9, max(4, len(zoomed_df) * 0.35)))
+        plt.barh(zoomed_df["feature"], zoomed_df["coefficient"], color=zoomed_colors)
+        plt.axvline(0, color="black", linewidth=0.8)
+        plt.xlabel("Numeric/boolean: signed coefficient (red/green)  |  Categorical: range across levels (blue)")
+        plt.title(f"Ridge Coefficients — Zoomed In (excludes top {top_n_excluded}: "
+                  f"{', '.join(excluded_features)})")
+        plt.tight_layout()
+        coef_zoomed_chart_path = output_path/"final_model_coefficients_zoomed.png"
+        plt.savefig(coef_zoomed_chart_path, dpi=150)
+        mlflow.log_artifact(coef_zoomed_chart_path)
+        plt.close()
 
         # --- Log and register the full pipeline (preprocessing + model) ---
         # Registering the whole pipeline, not just the bare Ridge model,
@@ -235,6 +300,6 @@ def main(output_path:str):
 
 if __name__ == "__main__":
     base_dir = Path(__file__).resolve().parent.parent
-    ml_artifact_folder = base_dir/"ml_artifact"/"final_model_eval"
+    ml_artifact_folder = base_dir/"ml_artifact"/"final_model_eval3"
     ml_artifact_folder.mkdir(parents=True, exist_ok=True)
     main(ml_artifact_folder)

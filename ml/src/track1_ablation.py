@@ -119,6 +119,21 @@ def evaluate(y_true, y_pred) -> dict:
         "rmse": np.sqrt(mean_squared_error(y_true, y_pred)),
     }
 
+def _parent_feature(col_name: str) -> str:
+    """Maps a post-ColumnTransformer column name back to its original
+    feature (e.g. 'cat__Soil_Type_Clay' -> 'Soil_Type'), so one-hot
+    dummies collapse back into one human-readable feature per category."""
+    if col_name.startswith("cat__"):
+        stripped = col_name[len("cat__"):]
+        for cat in CATEGORICAL_FEATURES:
+            if stripped.startswith(cat + "_"):
+                return cat
+        return stripped
+    if col_name.startswith("num__"):
+        return col_name[len("num__"):]
+    if col_name.startswith("bool__"):
+        return col_name[len("bool__"):]
+    return col_name
 
 # ---------------------------------------------------------------------------
 # CV run for one (model, feature_set) combination
@@ -182,8 +197,44 @@ def run_ablation_arm(model_name: str, run_name: str, feature_set: list,
         mlflow.log_metric("std_val_r2", float(np.std(fold_r2)))
 
         # --- Mean +/- std feature importance / coefficients across folds ---
+        # One-hot dummies are grouped back to their parent feature at the
+        # PER-FOLD level, then averaged across folds -- not averaged-then-
+        # grouped. This preserves the correct fold-to-fold correlation
+        # between a categorical's dummy levels, giving a statistically
+        # honest mean/std for the grouped value.
+        #
+        # IMPORTANT: for Ridge specifically, a fully one-hot-encoded
+        # categorical combined with an intercept has its dummy coefficients
+        # sum to ~0 BY CONSTRUCTION (minimum-norm solution among infinitely
+        # many equally valid ones) -- regardless of whether that categorical
+        # actually matters. Summing is therefore meaningless for those
+        # groups. Using the RANGE (max-min) across a group's raw values
+        # instead measures what actually matters: how much switching
+        # between levels moves the prediction. Features that map to a
+        # single raw column (numeric/boolean, and CatBoost's natively
+        # unfragmented categoricals) are unaffected -- range of one value
+        # isn't computed; the single value is used directly, identical to
+        # the old sum-based behavior in that case.
         importance_label = "Feature Importance" if model_name == "catboost" else "Coefficient"
-        importance_df = pd.DataFrame(fold_importances)
+        grouped_fold_importances = []
+        feature_type = {}  # "single" (numeric/bool, or catboost's unfragmented categoricals) vs "range" (ridge one-hot groups)
+        for fold_dict in fold_importances:
+            raw_by_parent = {}
+            for col, val in fold_dict.items():
+                parent = _parent_feature(col)
+                raw_by_parent.setdefault(parent, []).append(val)
+
+            grouped = {}
+            for parent, values in raw_by_parent.items():
+                if len(values) == 1:
+                    grouped[parent] = values[0]
+                    feature_type[parent] = "single"
+                else:
+                    grouped[parent] = max(values) - min(values)
+                    feature_type[parent] = "range"
+            grouped_fold_importances.append(grouped)
+
+        importance_df = pd.DataFrame(grouped_fold_importances)
         importance_summary = pd.DataFrame({
             "mean_value": importance_df.mean(),
             "std_value": importance_df.std(),
@@ -205,13 +256,17 @@ def run_ablation_arm(model_name: str, run_name: str, feature_set: list,
             mlflow.log_artifact(f"{model_name}_{run_name}_importance.csv")
 
         plot_df = importance_summary.sort_values("abs_mean", ascending=True)
-        colors = ["#d62728" if v < 0 else "#2ca02c" for v in plot_df["mean_value"]] \
-            if model_name == "ridge" else None  # CatBoost importances are non-negative by nature
+        colors = [
+            "#3a6ea5" if feature_type.get(feat) == "range"
+            else ("#d62728" if v < 0 else "#2ca02c")
+            for feat, v in zip(plot_df.index, plot_df["mean_value"])
+        ] if model_name == "ridge" else None  # CatBoost importances are non-negative by nature
 
         plt.figure(figsize=(9, max(4, len(plot_df) * 0.3)))
         plt.barh(plot_df.index, plot_df["mean_value"], xerr=plot_df["std_value"], color=colors)
         plt.axvline(0, color="black", linewidth=0.8)
-        plt.xlabel(f"Mean {importance_label} (± std across {N_SPLITS} folds)")
+        xlabel_suffix = " | blue = range across one-hot levels, not a signed coefficient" if model_name == "ridge" else ""
+        plt.xlabel(f"Mean {importance_label} (± std across {N_SPLITS} folds){xlabel_suffix}")
         plt.title(f"{model_name} / {run_name}: {importance_label}")
         plt.tight_layout()
         chart_path = output_path/f"{model_name}_{run_name}_importance.png"
@@ -268,7 +323,7 @@ def log_comparison(model_name: str, native_scores, enriched_scores, native_run_i
 
 def main():
     base_dir = Path(__file__).resolve().parent.parent
-    ml_artifact_folder = base_dir/"ml_artifact"/"trak1_ablation"
+    ml_artifact_folder = base_dir/"ml_artifact"/"trak1_ablation3"
     ml_artifact_folder.mkdir(parents=True, exist_ok=True)
     mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
 
