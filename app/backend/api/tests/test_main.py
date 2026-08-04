@@ -8,7 +8,7 @@ model artifact on disk. This makes the suite fast, fully deterministic, and
 safe to run in CI without any model-training step beforehand.
 
 Run with:
-    pytest test_api.py -v
+    pytest test_main.py -v
 """
 
 import os
@@ -75,19 +75,8 @@ VALID_CONTEXT = {
 
 
 # ---------------------------------------------------------------------------
-# Health check
-# ---------------------------------------------------------------------------
-
-def test_health_check(client):
-    response = client.get("/")
-    assert response.status_code == 200
-    body = response.json()
-    assert body["status"] == "ok"
-    assert body["model_loaded"] is True
-
-# ══════════════════════════════════════════════════════════════════════════════
 # 1. API HEALTH 
-# ══════════════════════════════════════════════════════════════════════════════
+# ---------------------------------------------------------------------------
 
 class TestAPIHealth:
  
